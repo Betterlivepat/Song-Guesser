@@ -1707,7 +1707,8 @@
     }
 
     function renderLobbyPlayers() {
-      const entries = Object.entries(roomPlayers);
+      // Safely filter out disconnected 'null' players
+      const entries = Object.entries(roomPlayers).filter(([pid, p]) => p !== null && p !== undefined);
       const maxP = currentRoomSettings ? currentRoomSettings.maxPlayers : "?";
       lobbyPlayerCount.textContent = `DETECTED: ${entries.length} / ${maxP} PLAYERS`;
 
@@ -1717,7 +1718,7 @@
         row.className = "lobby-player-row";
         const isMe = pid === playerId;
         const isRoomHost = currentRoomHostId === pid;
-        row.innerHTML = `<span>${escapeHtml(p.name)}${isMe ? " (YOU)" : ""}</span>` +
+        row.innerHTML = `<span>${escapeHtml(p.name || "Unknown")}${isMe ? " (YOU)" : ""}</span>` +
           (isRoomHost ? `<span class="tag">HOST</span>` : "");
         lobbyPlayerList.appendChild(row);
       });
@@ -1734,14 +1735,16 @@
         lobbyWaitingText.textContent = "AWAITING HOST SIGNAL...";
       }
     }
-
     function renderMpScoreboard() {
       mpScoreboard.innerHTML = "";
-      const sorted = Object.entries(roomPlayers).sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+      const sorted = Object.entries(roomPlayers)
+        .filter(([pid, p]) => p !== null && p !== undefined)
+        .sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+        
       sorted.forEach(([pid, p]) => {
         const chip = document.createElement("span");
         chip.className = "mp-chip" + (pid === currentRoomHostId ? " is-host" : "");
-        chip.textContent = `${p.name}: ${p.score || 0}`;
+        chip.textContent = `${p.name || "Unknown"}: ${p.score || 0}`;
         mpScoreboard.appendChild(chip);
       });
     }
@@ -1954,7 +1957,10 @@
       tierMsg.textContent = `${tierTitle}`;
       tierMsg.style.display = "block";
 
-      const sorted = Object.entries(roomPlayers).sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+      const sorted = Object.entries(roomPlayers)
+        .filter(([pid, p]) => p !== null && p !== undefined)
+        .sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+        
       const medals = ["🥇", "🥈", "🥉"];
       leaderboardEl.innerHTML = "";
       sorted.forEach(([pid, p], i) => {
@@ -1962,7 +1968,7 @@
         row.className = "leaderboard-row" + (i === 0 ? " winner" : "");
         const rank = medals[i] || `${i + 1}.`;
         const you = pid === playerId ? " (YOU)" : "";
-        row.innerHTML = `<span><span class="rank">${rank}</span>${escapeHtml(p.name)}${you}</span><span>${p.score || 0} PTS</span>`;
+        row.innerHTML = `<span><span class="rank">${rank}</span>${escapeHtml(p.name || "Unknown")}${you}</span><span>${p.score || 0} PTS</span>`;
         leaderboardEl.appendChild(row);
       });
       leaderboardEl.classList.add("visible");
@@ -1972,18 +1978,18 @@
       changeSettingsBtn2.textContent = "DISCONNECT";
       endActions.classList.add("visible");
     }
-
     async function mpPlayAgain() {
       if (!isHost) return;
       const updates = {};
-      Object.keys(roomPlayers).forEach(pid => {
-        updates[`rooms/${currentRoomCode}/players/${pid}/score`] = 0;
+      Object.entries(roomPlayers).forEach(([pid, p]) => {
+        if (p !== null && p !== undefined) {
+          updates[`rooms/${currentRoomCode}/players/${pid}/score`] = 0;
+        }
       });
       await fbDb.ref().update(updates);
       await fbDb.ref(`rooms/${currentRoomCode}/status`).set("playing");
       mpPublishRound(1);
     }
-
     async function mpLeaveRoom() {
       if (currentRoomCode && fbDb) {
         try {
