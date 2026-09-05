@@ -942,6 +942,7 @@
     let currentRoundData = null; 
     let hasAnsweredThisRound = false;
     let mpTimerInterval = null;
+    const MP_ANSWER_TIME_LIMIT = 30; // seconds each player has to answer a multiplayer round
     
     // Track selected state locally until reveal is triggered
     let localSelectedTitle = null;
@@ -1847,6 +1848,21 @@
 
     function renderMultiplayerRound(data) {
       if (!currentRoomSettings) return;
+
+      // rooms/{code}/round has answers/{pid} and reveal as CHILDREN, so this
+      // "value" listener re-fires on every answer submission and on reveal --
+      // not just when a genuinely new round starts. Those are already handled
+      // by their own dedicated listeners, so don't let them nuke the round
+      // back to its starting state. The one thing worth reacting to here is
+      // the host's own optimistic startedAt placeholder resolving into the
+      // real server timestamp, so the countdown can actually start.
+      if (currentRoundData && currentRoundData.n === data.n) {
+        if (typeof data.startedAt === "number" && currentRoundData.startedAt !== data.startedAt) {
+          currentRoundData.startedAt = data.startedAt;
+          if (isRoundActive) mpStartRoundTimer(data.startedAt);
+        }
+        return;
+      }
 
       clearInterval(questionTimerInterval);
       clearInterval(audioCountdownInterval);
