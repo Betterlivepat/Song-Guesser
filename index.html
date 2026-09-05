@@ -1565,6 +1565,15 @@
       }
     }
 
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function randomRoomCode() {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; 
       let code = "";
@@ -1735,6 +1744,7 @@
         lobbyWaitingText.textContent = "AWAITING HOST SIGNAL...";
       }
     }
+
     function renderMpScoreboard() {
       mpScoreboard.innerHTML = "";
       const sorted = Object.entries(roomPlayers)
@@ -1978,6 +1988,7 @@
       changeSettingsBtn2.textContent = "DISCONNECT";
       endActions.classList.add("visible");
     }
+
     async function mpPlayAgain() {
       if (!isHost) return;
       const updates = {};
@@ -1990,6 +2001,7 @@
       await fbDb.ref(`rooms/${currentRoomCode}/status`).set("playing");
       mpPublishRound(1);
     }
+
     async function mpLeaveRoom() {
       if (currentRoomCode && fbDb) {
         try {
