@@ -926,6 +926,7 @@
     let audioCountdownInterval = null;
 
     let isRoundActive = false;
+    let hostRoundOpen = false; // tracks whether the HOST still needs to close out the round (independent of whether the host has personally answered)
     let autoAdvanceTimer = null;
     const AUTO_ADVANCE_DELAY_MS = 2500;
 
@@ -1692,8 +1693,8 @@
         const totalPlayers = Object.keys(roomPlayers).length;
         mpAnswerStatus.textContent = `TARGETS LOCKED: ${answeredCount}/${totalPlayers}`;
 
-        if (isHost && isRoundActive && answeredCount > 0 && answeredCount >= totalPlayers) {
-          fbDb.ref(`rooms/${currentRoomCode}/round/reveal`).set(true);
+        if (isHost && hostRoundOpen && answeredCount > 0 && answeredCount >= totalPlayers) {
+          mpFinalizeRound();
         }
       });
 
@@ -1794,6 +1795,30 @@
       showSettingsView();
     });
 
+    // HOST ONLY: tally each player's round points onto their running total,
+    // then flip reveal=true. Guarded by hostRoundOpen so this only ever runs
+    // once per round, even though the host may have answered (and therefore
+    // gone isRoundActive=false) long before the round actually closes out.
+    async function mpFinalizeRound() {
+      if (!isHost || !hostRoundOpen) return;
+      hostRoundOpen = false;
+      try {
+        const snap = await fbDb.ref(`rooms/${currentRoomCode}/round/answers`).once("value");
+        const answers = snap.val() || {};
+        const updates = {};
+        Object.entries(answers).forEach(([pid, a]) => {
+          const priorScore = (roomPlayers[pid] && roomPlayers[pid].score) || 0;
+          updates[`rooms/${currentRoomCode}/players/${pid}/score`] = priorScore + (a.points || 0);
+        });
+        if (Object.keys(updates).length) {
+          await fbDb.ref().update(updates);
+        }
+      } catch (e) {
+        console.error("mpFinalizeRound failed:", e);
+      }
+      await fbDb.ref(`rooms/${currentRoomCode}/round/reveal`).set(true);
+    }
+
     function mpPublishRound(n) {
       const randomIndex = Math.floor(Math.random() * songPool.length);
       const correctSong = songPool[randomIndex];
@@ -1831,6 +1856,7 @@
       currentRoundData = data;
       hasAnsweredThisRound = false;
       isRoundActive = true;
+      hostRoundOpen = true;
       localSelectedTitle = null;
       localPointsEarned = 0;
 
@@ -1879,6 +1905,29 @@
       mpStartRoundTimer(data.startedAt);
     }
 
+    // Reveal for players who did NOT answer before the round ended
+    // (ran out of time, or the last other player just answered)
+    function mpRevealRound() {
+      isRoundActive = false;
+      clearInterval(mpTimerInterval);
+      clearInterval(audioCountdownInterval);
+      audioPlayer.pause();
+      eqIcon.classList.remove("playing");
+
+      lockRoundAndReveal(null);
+
+      statusMsg.style.color = "var(--accent-red)";
+      statusMsg.textContent = `TIME EXPIRED! TARGET WAS "${currentRoundData.song.title}"`;
+
+      if (isHost) {
+        const isLast = currentRoundData.n >= currentRoomSettings.rounds;
+        nextRoundBtn.textContent = isLast ? "VIEW FINAL DIAGNOSTICS" : "PROCEED TO NEXT SEQUENCE";
+        nextRoundBtn.classList.add("visible");
+      } else {
+        mpAdvanceWait.style.display = "block";
+      }
+    }
+
     function mpStartRoundTimer(startedAt) {
       clearInterval(mpTimerInterval);
       function tick() {
@@ -1889,8 +1938,8 @@
         timerEl.textContent = remaining;
         if (remaining <= 0) {
           clearInterval(mpTimerInterval);
-          if (isHost && isRoundActive) {
-            fbDb.ref(`rooms/${currentRoomCode}/round/reveal`).set(true);
+          if (isHost && hostRoundOpen) {
+            mpFinalizeRound();
           }
         }
       }
